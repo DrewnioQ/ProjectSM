@@ -38,9 +38,9 @@
 /* USER CODE BEGIN PTD */
 
 #define PID_TS        0.1        /* Sampling Time [s]*/
-#define PID_KP        15.5       /* Proportional */
-#define PID_KI        0.7886	 /* Integral */
-#define PID_KD        0          /* Derivative */
+#define PID_KP        10       /* Proportional */
+#define PID_KI        0.5	     /* Integral */
+#define PID_KD        2          /* Derivative */
 
 /* USER CODE END PTD */
 
@@ -83,19 +83,15 @@ struct bmp280_dev bmp280 = {
 
 struct bmp280_uncomp_data bmp280_data;
 
-//int32_t temp32;
-double temp;
-//uint32_t pres32;
-//uint32_t press32;
-//double pres;
 int8_t rslt;
-//int counter = 0;
-char odebrane[4];
 uint16_t PWM;
 uint16_t setValue;
-float uchyb = 0;
-float PWM_raw = 0;
-double SWV_temp = 0;
+uint16_t SWV_PWM;
+double temp;
+float uchyb;
+float PWM_raw;
+float SWV_temp;
+char odebrane[3];
 
 void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
 {
@@ -105,32 +101,34 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
 		 rslt = bmp280_get_uncomp_data(&bmp280_data, &bmp280);
 
 		 rslt = bmp280_get_comp_temp_double(&temp, bmp280_data.uncomp_temp, &bmp280);
-		 SWV_temp = temp;
+		 SWV_temp = (float)temp;
 
 		 uchyb = (float)(setValue - temp);
 
 		 PWM_raw = arm_pid_f32(&PID, uchyb);
-		 PWM=(float)(PWM_raw);
+		 PWM = (uint16_t)(PWM_raw);
 
 		 if(PWM_raw>2000)
 		 {
 		 	PWM=2000;
-		 	//arm_pid_reset_f32(&PID_regulator);
+		 	// arm_pid_reset_f32(&PID);
 		 	if(PID.state[2] > 2500) PID.state[2] = 2500;
 		 }
 		 else if (PWM_raw<0)
 		 {
-		 	//arm_pid_reset_f32(&PID_regulator);
+		 	// arm_pid_reset_f32(&PID);
 		 	PWM=0;
 		 	PID.state[2] = 0;
 		 }
 		 if(PWM<=1000)
 		 {
+			 SWV_PWM = PWM/10;
 			 __HAL_TIM_SET_COMPARE(&htim2, TIM_CHANNEL_4, PWM);
 		 }
 		 else
 		 {
-			 __HAL_TIM_SET_COMPARE(&htim2, TIM_CHANNEL_4, 1000);
+			 SWV_PWM = 100;
+			 __HAL_TIM_SET_COMPARE(&htim2, TIM_CHANNEL_4, SWV_PWM*10);
 		 }
 
 
@@ -141,7 +139,7 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
 		 char txData[50];
 		 int text = sprintf(txData, "set_temp: %u | temp: %d.%02u | uchyb: %d\r\n",
 		 				 	setValue, (int32_t)temp, (int32_t)((temp-(int32_t)temp)*100),
-		 					uchyb);
+							(int32_t)uchyb);
 
 		 HAL_UART_Transmit(&huart3, (uint8_t*)txData, text, strlen(text));
 	 }
@@ -152,24 +150,21 @@ void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
 {
 	if(huart->Instance == USART3)
 	{
-		if(odebrane[0]=='H')
-		{
-			//konwersja na int od 1 elementu tablicy
-			PWM = ((int8_t)odebrane[1]-'0')*100+((int8_t)odebrane[2]-'0')*10+((int8_t)odebrane[3]-'0')*1;
-			if(PWM>100) PWM = 100;
-			else if(PWM<0) PWM = 0;
-			__HAL_TIM_SET_COMPARE(&htim2, TIM_CHANNEL_4, PWM*10);
-		}
+//		if(odebrane[0]=='H')
+//		{
+//			//konwersja na int od 1 elementu tablicy
+//			PWM = ((int8_t)odebrane[1]-'0')*100+((int8_t)odebrane[2]-'0')*10+((int8_t)odebrane[3]-'0')*1;
+//			if(PWM>100) PWM = 100;
+//			else if(PWM<0) PWM = 0;
+//			__HAL_TIM_SET_COMPARE(&htim2, TIM_CHANNEL_4, PWM*10);
+//		}
 
 		if(odebrane[0]=='T')
 		{
-			 rslt = bmp280_get_uncomp_data(&bmp280_data, &bmp280);
-			 rslt = bmp280_get_comp_temp_double(&temp, bmp280_data.uncomp_temp, &bmp280);
-
 			//konwersja na int od 1 elementu tablicy
-			setValue = ((int8_t)odebrane[1]-'0')*100+((int8_t)odebrane[2]-'0')*10+((int8_t)odebrane[3]-'0')*1;
-			if(setValue>45) setValue = 45;
-			else if(setValue<temp) setValue = 0;
+			setValue = ((int8_t)odebrane[1]-'0')*10+((int8_t)odebrane[2]-'0')*1;
+			if(setValue>40) setValue = 40;
+			else if(setValue<20) setValue = 20;
 //			__HAL_TIM_SET_COMPARE(&htim2, TIM_CHANNEL_4, setValue*10);
 		}
 	}
@@ -219,11 +214,11 @@ int main(void)
   HAL_TIM_Base_Start_IT(&htim3);
   HAL_TIM_Base_Start_IT(&htim4);
   HAL_TIM_PWM_Start(&htim2, TIM_CHANNEL_4);
-  HAL_UART_Receive_IT(&huart3, (uint8_t*)odebrane, 4);
+  HAL_UART_Receive_IT(&huart3, (uint8_t*)odebrane, sizeof(odebrane));
 
   PID.Kp = PID_KP;
   PID.Ki = PID_KI * PID_TS;
-//  PID.Kd = PID_KD / PID_TS;
+  PID.Kd = PID_KD / PID_TS;
 
   arm_pid_init_f32(&PID, 1);
 
