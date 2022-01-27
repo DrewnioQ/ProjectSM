@@ -38,9 +38,9 @@
 /* USER CODE BEGIN PTD */
 
 #define PID_TS        0.1        /* Sampling Time [s]*/
-#define PID_KP        10       /* Proportional */
-#define PID_KI        0.5	     /* Integral */
-#define PID_KD        2          /* Derivative */
+#define PID_KP        5          /* Proportional */
+#define PID_KI        0.2	     /* Integral */
+#define PID_KD        1.2        /* Derivative */
 
 /* USER CODE END PTD */
 
@@ -85,8 +85,8 @@ struct bmp280_uncomp_data bmp280_data;
 
 int8_t rslt;
 uint16_t PWM;
-uint16_t setValue;
-uint16_t SWV_PWM;
+uint16_t setValue = 20;
+uint16_t PWM_duty;
 double temp;
 float uchyb;
 float PWM_raw;
@@ -108,11 +108,10 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
 		 PWM_raw = arm_pid_f32(&PID, uchyb);
 		 PWM = (uint16_t)(PWM_raw);
 
-		 if(PWM_raw>2000)
+		 if(PWM_raw>1000)
 		 {
-		 	PWM=2000;
 		 	// arm_pid_reset_f32(&PID);
-		 	if(PID.state[2] > 2500) PID.state[2] = 2500;
+		 	if(PID.state[2] > 1000) PID.state[2] = 1000;
 		 }
 		 else if (PWM_raw<0)
 		 {
@@ -122,24 +121,23 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
 		 }
 		 if(PWM<=1000)
 		 {
-			 SWV_PWM = PWM/10;
+			 PWM_duty = PWM/10;
 			 __HAL_TIM_SET_COMPARE(&htim2, TIM_CHANNEL_4, PWM);
 		 }
-		 else
+		 else if (PWM>1000)
 		 {
-			 SWV_PWM = 100;
-			 __HAL_TIM_SET_COMPARE(&htim2, TIM_CHANNEL_4, SWV_PWM*10);
+			 PWM = 1000;
+			 PWM_duty = PWM/10;
+			 __HAL_TIM_SET_COMPARE(&htim2, TIM_CHANNEL_4, PWM);
 		 }
-
-
 	 }
 
 	 if (htim->Instance == TIM4)
 	 {
 		 char txData[50];
-		 int text = sprintf(txData, "set_temp: %u | temp: %d.%02u | uchyb: %d\r\n",
-		 				 	setValue, (int32_t)temp, (int32_t)((temp-(int32_t)temp)*100),
-							(int32_t)uchyb);
+		 int text = sprintf(txData, "set_temp: %u    temp: %d.%02u    PWM_duty: %u %%\r\n",
+		 				 	(uint16_t)setValue, (int32_t)temp, (int32_t)((temp-(int32_t)temp)*100),
+							(uint16_t)PWM_duty);
 
 		 HAL_UART_Transmit(&huart3, (uint8_t*)txData, text, strlen(text));
 	 }
@@ -169,7 +167,7 @@ void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
 		}
 	}
 
-	HAL_UART_Receive_IT(&huart3, (uint8_t*)odebrane, 4);
+	HAL_UART_Receive_IT(&huart3, (uint8_t*)odebrane, sizeof(odebrane));
 }
 
 
